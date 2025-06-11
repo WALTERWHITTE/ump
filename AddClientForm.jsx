@@ -1,17 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-const AddClientForm = ({ onClose, onSuccess }) => {
+const AddClientForm = ({ onClose, onAddClient, existingClient }) => {
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    contact: '',
-    dob: '',
-    profession: '',
-    gender: '',
+    clientName: '',
+    clientEmail: '',
+    clientContact: '',
+    clientDob: '',
+    clientProfession: '',
+    clientGender: '',
   });
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    if (existingClient) {
+      setFormData({
+        clientName: existingClient.clientName || '',
+        clientEmail: existingClient.clientEmail || '',
+        clientContact: existingClient.clientContact !== null ? String(existingClient.clientContact) : '',
+        clientDob: existingClient.clientDob ? existingClient.clientDob.split('T')[0] : '',
+        clientProfession: existingClient.clientProfession || '',
+        clientGender: existingClient.clientGender || '',
+      });
+    }
+  }, [existingClient]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -26,52 +39,73 @@ const AddClientForm = ({ onClose, onSuccess }) => {
     setError('');
     setSuccess('');
 
-    const { name, email, contact, dob, profession, gender } = formData;
+    const {
+      clientName,
+      clientEmail,
+      clientContact,
+      clientDob,
+      clientProfession,
+      clientGender,
+    } = formData;
 
-    // Basic validation
-    if (!name.trim()) return setError('Client Name is required');
-    if (!email.trim()) return setError('Client Email is required');
+    // Validation
+    if (!clientName.trim()) return setError('Client Name is required');
+    if (!clientEmail.trim()) return setError('Client Email is required');
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) return setError('Invalid email format');
-    if (gender && !['Male', 'Female'].includes(gender)) return setError('Gender must be Male or Female');
-    if (dob && isNaN(new Date(dob).getTime())) return setError('Invalid date of birth');
-    if (contact && !/^\d+$/.test(contact)) return setError('Contact must contain only digits');
+    if (!emailRegex.test(clientEmail)) return setError('Invalid email format');
+    if (clientGender && !['Male', 'Female'].includes(clientGender)) return setError('Gender must be Male or Female');
+    if (clientDob && isNaN(new Date(clientDob).getTime())) return setError('Invalid date of birth');
+    if (clientContact && !/^\d{10}$/.test(clientContact)) return setError('Contact must be a 10-digit number');
 
     const token = localStorage.getItem('token');
     if (!token) return setError('Unauthorized: Please login.');
 
+    const clientPayload = {
+      name: clientName.trim(),
+      email: clientEmail.trim(),
+      contact: clientContact ? String(clientContact).trim() : null,
+      dob: clientDob || null,
+      profession: clientProfession ? String(clientProfession).trim() : null,
+      gender: clientGender || null,
+    };
+
+    const url = existingClient
+      ? `http://localhost:3000/api/clients/${existingClient.clientId}`
+      : 'http://localhost:3000/api/clients';
+    const method = existingClient ? 'PUT' : 'POST';
+
     try {
-      const response = await fetch('http://localhost:3000/api/clients', {
-        method: 'POST',
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          contact: contact.trim() || null,
-          dob: dob || null,
-          profession: profession.trim() || null,
-          gender: gender || null,
-        }),
+        body: JSON.stringify(clientPayload),
       });
 
       const result = await response.json();
-      if (!response.ok) throw new Error(result.message || 'Failed to add client.');
+      if (!response.ok) throw new Error(result.message || 'Request failed');
 
-      setSuccess('✅ Client added successfully!');
-      setFormData({
-        name: '',
-        email: '',
-        contact: '',
-        dob: '',
-        profession: '',
-        gender: '',
-      });
+      setSuccess(existingClient ? '✅ Client updated successfully!' : '✅ Client added successfully!');
 
-      if (onSuccess) onSuccess(); // refresh client list if needed
-      if (onClose) onClose();     // close modal or form
+      if (onAddClient) {
+        const updatedClient = {
+          clientId: existingClient?.clientId || result.clientId,
+          clientName: clientPayload.name,
+          clientEmail: clientPayload.email,
+          clientContact: clientPayload.contact,
+          clientDob: clientPayload.dob,
+          clientProfession: clientPayload.profession,
+          clientGender: clientPayload.gender,
+        };
+
+        console.log('[onAddClient] Sending to dashboard:', updatedClient);
+        onAddClient(updatedClient);
+      }
+
+      onClose(); // Close modal
     } catch (err) {
       console.error('❌ Error:', err);
       setError(err.message || 'Something went wrong.');
@@ -80,7 +114,9 @@ const AddClientForm = ({ onClose, onSuccess }) => {
 
   return (
     <div className="max-w-md p-6 mx-auto bg-white rounded-lg shadow-lg">
-      <h2 className="mb-4 text-xl font-semibold">Add New Client</h2>
+      <h2 className="mb-4 text-xl font-semibold">
+        {existingClient ? 'Edit Client' : 'Add New Client'}
+      </h2>
 
       {error && <p className="mb-2 text-red-600">{error}</p>}
       {success && <p className="mb-2 text-green-600">{success}</p>}
@@ -88,7 +124,7 @@ const AddClientForm = ({ onClose, onSuccess }) => {
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="text"
-          name="name"
+          name="clientName"
           placeholder="Client Name *"
           value={formData.clientName}
           onChange={handleChange}
@@ -97,7 +133,7 @@ const AddClientForm = ({ onClose, onSuccess }) => {
         />
         <input
           type="email"
-          name="email"
+          name="clientEmail"
           placeholder="Client Email *"
           value={formData.clientEmail}
           onChange={handleChange}
@@ -106,7 +142,7 @@ const AddClientForm = ({ onClose, onSuccess }) => {
         />
         <input
           type="tel"
-          name="contact"
+          name="clientContact"
           placeholder="Contact Number"
           value={formData.clientContact}
           onChange={handleChange}
@@ -114,21 +150,21 @@ const AddClientForm = ({ onClose, onSuccess }) => {
         />
         <input
           type="date"
-          name="dob"
+          name="clientDob"
           value={formData.clientDob}
           onChange={handleChange}
           className="w-full px-4 py-2 border rounded-md"
         />
         <input
           type="text"
-          name="profession"
+          name="clientProfession"
           placeholder="Profession"
           value={formData.clientProfession}
           onChange={handleChange}
           className="w-full px-4 py-2 border rounded-md"
         />
         <select
-          name="gender"
+          name="clientGender"
           value={formData.clientGender}
           onChange={handleChange}
           className="w-full px-4 py-2 border rounded-md"
@@ -143,7 +179,7 @@ const AddClientForm = ({ onClose, onSuccess }) => {
             Cancel
           </button>
           <button type="submit" className="px-4 py-2 text-white bg-blue-600 rounded">
-            Submit
+            {existingClient ? 'Update' : 'Add'}
           </button>
         </div>
       </form>
